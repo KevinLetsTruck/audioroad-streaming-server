@@ -16,8 +16,13 @@ import { AutoDJ } from './autoDJ.js';
 const app = express();
 const PORT = parseInt(process.env.PORT || '8081', 10);
 
-// Middleware
-app.use(cors());
+// Middleware - WIDE OPEN CORS for streaming (public content)
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+}));
 app.use(express.json());
 
 // Create HTTP server
@@ -38,6 +43,8 @@ const autoDJ = new AutoDJ(hlsServer);
 
 // Health check
 app.get('/health', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'application/json');
   res.json({
     status: 'ok',
     service: 'AudioRoad Streaming Server',
