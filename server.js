@@ -93,17 +93,30 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Control commands from main app
-  socket.on('start-live', async () => {
-    console.log('📡 Starting live broadcast mode');
-    await autoDJ.pause(); // Stop Auto DJ
-    socket.emit('live-started');
+  // Live show starting - pause Auto DJ
+  socket.on('live-start', async () => {
+    console.log('📡 [LIVE] Live show starting - pausing Auto DJ...');
+    try {
+      if (autoDJ && autoDJ.isPlaying()) {
+        await autoDJ.stop();
+        console.log('✅ [LIVE] Auto DJ stopped - ready for live audio');
+      }
+    } catch (error) {
+      console.error('❌ [LIVE] Error stopping Auto DJ:', error);
+    }
   });
 
-  socket.on('stop-live', async () => {
-    console.log('📴 Stopping live broadcast mode');
-    await autoDJ.resume(); // Resume Auto DJ
-    socket.emit('live-stopped');
+  // Live show ended - resume Auto DJ
+  socket.on('live-stop', async () => {
+    console.log('📴 [LIVE] Live show ended - resuming Auto DJ...');
+    try {
+      if (autoDJ && !autoDJ.isPlaying()) {
+        await autoDJ.start();
+        console.log('✅ [LIVE] Auto DJ resumed');
+      }
+    } catch (error) {
+      console.error('❌ [LIVE] Error resuming Auto DJ:', error);
+    }
   });
 
   socket.on('disconnect', () => {
