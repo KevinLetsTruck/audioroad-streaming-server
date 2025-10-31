@@ -13,10 +13,14 @@ export class AutoDJ {
     this.hlsServer = hlsServer;
     this.playing = false;
     this.ffmpeg = null;
+    this.tempFile = null;          // Keep temp file for resume
+    this.pausedAt = 0;             // Track pause position in seconds
+    this.startTime = null;         // Track when playback started
     this.playlist = [
       {
         title: 'ROTC 9-23-25',
-        url: 'https://destinationhealth-medical-docs-dev.s3.us-east-1.amazonaws.com/autodj/1761828187592-20250923 ROTC.m4a'
+        url: 'https://destinationhealth-medical-docs-dev.s3.us-east-1.amazonaws.com/autodj/1761828187592-20250923 ROTC.m4a',
+        duration: 7117  // 1h 58m in seconds
       }
     ];
   }
@@ -33,30 +37,48 @@ export class AutoDJ {
     if (!this.playing) return;
 
     console.log(`🎵 [AUTO DJ] Playing: ${track.title}`);
-    console.log('   Downloading file...');
-
+    
     try {
-      // Download file
-      const response = await axios.get(track.url, {
-        responseType: 'arraybuffer',
-        timeout: 120000
-      });
+      // Check if we have a paused file to resume from
+      if (this.tempFile && this.pausedAt > 0) {
+        console.log(`   ⏩ Resuming from ${Math.floor(this.pausedAt / 60)}m ${Math.floor(this.pausedAt % 60)}s`);
+        console.log(`   Using existing temp file: ${this.tempFile}`);
+      } else {
+        // Download file fresh
+        console.log('   Downloading file...');
+        const response = await axios.get(track.url, {
+          responseType: 'arraybuffer',
+          timeout: 120000
+        });
 
-      const tempFile = `/tmp/autodj-${Date.now()}.m4a`;
-      await fs.writeFile(tempFile, Buffer.from(response.data));
-      console.log(`   ✓ Downloaded ${(response.data.byteLength / 1024 / 1024).toFixed(1)} MB`);
+        this.tempFile = `/tmp/autodj-${Date.now()}.m4a`;
+        await fs.writeFile(this.tempFile, Buffer.from(response.data));
+        console.log(`   ✓ Downloaded ${(response.data.byteLength / 1024 / 1024).toFixed(1)} MB`);
+        this.pausedAt = 0;  // Starting from beginning
+      }
+      
       console.log('   Starting playback...');
 
-      // Play with FFmpeg
-      this.ffmpeg = spawn('ffmpeg', [
-        '-readrate', '1',
-        '-i', tempFile,
+      // Play with FFmpeg - seek to resume position if paused
+      const ffmpegArgs = ['-readrate', '1'];
+      
+      // If resuming, seek to the pause position
+      if (this.pausedAt > 0) {
+        ffmpegArgs.push('-ss', this.pausedAt.toString());  // Seek to position
+        console.log(`   🎯 Seeking to ${this.pausedAt}s in file`);
+      }
+      
+      ffmpegArgs.push(
+        '-i', this.tempFile,
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
         '-vn',
         'pipe:1'
-      ]);
+      );
+      
+      this.ffmpeg = spawn('ffmpeg', ffmpegArgs);
+      this.startTime = Date.now() - (this.pausedAt * 1000);  // Adjust for resume position
 
       // Pipe audio to HLS server
       let chunkCount = 0;
@@ -83,19 +105,24 @@ export class AutoDJ {
       this.ffmpeg.on('exit', async (code) => {
         console.log(`✅ [AUTO DJ] Track finished: ${track.title} (exit code: ${code}, chunks: ${chunkCount})`);
         
-        // Clean up
-        await fs.unlink(tempFile).catch(() => {});
-        
-        // If code isn't 0, something went wrong
-        if (code !== 0 && code !== null) {
+        // If track finished naturally (not paused), clean up and restart
+        if (code === 0) {
+          // Track played to the end
+          await fs.unlink(this.tempFile).catch(() => {});
+          this.tempFile = null;
+          this.pausedAt = 0;
+          this.startTime = null;
+          
+          // Loop: play again from beginning
+          if (this.playing) {
+            console.log('🔄 [AUTO DJ] Track completed - restarting from beginning...');
+            await this.playTrack(track);
+          }
+        } else if (code !== null) {
+          // Error exit
           console.error(`❌ [AUTO DJ] FFmpeg exited abnormally with code ${code}`);
         }
-        
-        // Loop: play again
-        if (this.playing) {
-          console.log('🔄 [AUTO DJ] Restarting track...');
-          await this.playTrack(track);
-        }
+        // If code is null, it was killed (paused) - keep temp file and position for resume
       });
 
       this.ffmpeg.on('error', (error) => {
@@ -116,13 +143,25 @@ export class AutoDJ {
   }
 
   async stop() {
-    console.log('📴 [AUTO DJ] Stopping...');
+    console.log('⏸️ [AUTO DJ] Pausing (saving position for resume)...');
+    
+    // Calculate current position
+    if (this.startTime) {
+      const elapsed = (Date.now() - this.startTime) / 1000;  // Convert to seconds
+      this.pausedAt = elapsed;
+      console.log(`   Paused at: ${Math.floor(elapsed / 60)}m ${Math.floor(elapsed % 60)}s`);
+    }
+    
     this.playing = false;
+    
     if (this.ffmpeg) {
       this.ffmpeg.kill('SIGKILL');
       this.ffmpeg = null;
     }
-    console.log('✅ [AUTO DJ] Stopped');
+    
+    // Keep temp file for resume! Don't delete it
+    console.log(`   Keeping temp file for resume: ${this.tempFile}`);
+    console.log('✅ [AUTO DJ] Paused - will resume from this position');
   }
 
   isPlaying() {
