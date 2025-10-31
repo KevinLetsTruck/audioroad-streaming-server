@@ -62,9 +62,15 @@ export class HLSServer {
 
   processAudio(audioData) {
     if (this.inputStream && this.streaming) {
-      // Convert Float32Array to Buffer
-      const buffer = Buffer.from(audioData.buffer);
-      this.inputStream.write(buffer);
+      // Convert Float32Array to Buffer properly
+      const buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
+      
+      // Write to FFmpeg stdin
+      try {
+        this.inputStream.write(buffer);
+      } catch (error) {
+        console.error('❌ [HLS] Error writing audio to stream:', error);
+      }
     }
   }
 
