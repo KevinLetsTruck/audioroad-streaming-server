@@ -47,13 +47,29 @@ export class HLSServer {
       this.inputStream.pipe(this.ffmpeg.stdin);
       this.streaming = true;
 
-      this.ffmpeg.on('error', (err) => console.error('❌ [HLS] FFmpeg error:', err));
+      this.ffmpeg.stderr.on('data', (data) => {
+        const msg = data.toString();
+        // Log segment creation
+        if (msg.includes('Opening')) {
+          console.log('📦 [HLS] Creating segment...');
+        }
+        // Log errors
+        if (msg.includes('error') || msg.includes('Error')) {
+          console.error(`❌ [HLS] FFmpeg error: ${msg.substring(0, 200)}`);
+        }
+      });
+
+      this.ffmpeg.on('error', (err) => {
+        console.error('❌ [HLS] FFmpeg error:', err);
+      });
+      
       this.ffmpeg.on('exit', (code) => {
-        console.log(`📴 [HLS] FFmpeg exited: ${code}`);
+        console.log(`📴 [HLS] FFmpeg exited with code: ${code}`);
         this.streaming = false;
       });
 
       console.log('✅ [HLS] HLS server started');
+      console.log('   Waiting for audio input to create first segment...');
     } catch (error) {
       console.error('❌ [HLS] Failed to start:', error);
       throw error;
@@ -61,16 +77,22 @@ export class HLSServer {
   }
 
   processAudio(audioData) {
-    if (this.inputStream && this.streaming) {
-      // Convert Float32Array to Buffer properly
-      const buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
-      
-      // Write to FFmpeg stdin
-      try {
-        this.inputStream.write(buffer);
-      } catch (error) {
-        console.error('❌ [HLS] Error writing audio to stream:', error);
-      }
+    if (!this.inputStream || !this.streaming) {
+      console.error('❌ [HLS] Cannot process audio - stream not ready');
+      return;
+    }
+    
+    // Convert Float32Array to Buffer properly
+    const buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
+    
+    // Write to FFmpeg stdin
+    const written = this.inputStream.write(buffer);
+    
+    if (!written) {
+      // Buffer is full, wait for drain
+      this.inputStream.once('drain', () => {
+        // Ready to write more
+      });
     }
   }
 
