@@ -59,8 +59,20 @@ export class AutoDJ {
       ]);
 
       // Pipe audio to HLS server
+      let chunkCount = 0;
+      let lastLog = Date.now();
+      
       this.ffmpeg.stdout.on('data', (chunk) => {
         if (!this.playing) return;
+        
+        chunkCount++;
+        
+        // Log progress every 30 seconds
+        const now = Date.now();
+        if (now - lastLog > 30000) {
+          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks)`);
+          lastLog = now;
+        }
         
         const float32Data = new Float32Array(
           chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength)
@@ -69,19 +81,33 @@ export class AutoDJ {
       });
 
       this.ffmpeg.on('exit', async (code) => {
-        console.log(`✅ [AUTO DJ] Track finished: ${track.title}`);
+        console.log(`✅ [AUTO DJ] Track finished: ${track.title} (exit code: ${code}, chunks: ${chunkCount})`);
         
         // Clean up
         await fs.unlink(tempFile).catch(() => {});
         
+        // If code isn't 0, something went wrong
+        if (code !== 0 && code !== null) {
+          console.error(`❌ [AUTO DJ] FFmpeg exited abnormally with code ${code}`);
+        }
+        
         // Loop: play again
         if (this.playing) {
+          console.log('🔄 [AUTO DJ] Restarting track...');
           await this.playTrack(track);
         }
       });
 
       this.ffmpeg.on('error', (error) => {
         console.error('❌ [AUTO DJ] FFmpeg error:', error);
+      });
+      
+      this.ffmpeg.stderr.on('data', (data) => {
+        const msg = data.toString();
+        // Only log errors, not progress info
+        if (msg.includes('error') || msg.includes('Error')) {
+          console.error(`❌ [AUTO DJ] FFmpeg stderr: ${msg.substring(0, 200)}`);
+        }
       });
 
     } catch (error) {
