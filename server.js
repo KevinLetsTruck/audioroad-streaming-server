@@ -89,7 +89,7 @@ io.on('connection', (socket) => {
   // Receive live audio from main app
   socket.on('live-audio', (audioData) => {
     if (hlsServer.isStreaming()) {
-      hlsServer.processAudioChunk(audioData);
+      hlsServer.processAudio(audioData);  // Correct method name!
     }
   });
 
