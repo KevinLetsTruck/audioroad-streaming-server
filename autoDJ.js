@@ -68,10 +68,10 @@ export class AutoDJ {
         console.log(`   🎯 Seeking to ${this.pausedAt}s in file`);
       }
       
-      // Add readrate AFTER seek for accurate timing
+      // Use -re flag for REAL-TIME playback (more reliable than -readrate)
       ffmpegArgs.push(
-        '-readrate', '1',      // Read at real-time speed (prevents rushing!)
         '-i', this.tempFile,
+        '-re',                 // Read input at native frame rate (CRITICAL for real-time!)
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
