@@ -60,42 +60,52 @@ export class AutoDJ {
       console.log('   Starting playback...');
 
       // Play with FFmpeg - seek to resume position if paused
-      const ffmpegArgs = ['-readrate', '1'];
+      const ffmpegArgs = [];
       
-      // If resuming, seek to the pause position
+      // If resuming, seek to the pause position BEFORE input
       if (this.pausedAt > 0) {
-        ffmpegArgs.push('-ss', this.pausedAt.toString());  // Seek to position
+        ffmpegArgs.push('-ss', this.pausedAt.toString());  // Seek to position BEFORE -i
         console.log(`   🎯 Seeking to ${this.pausedAt}s in file`);
       }
       
+      // Add readrate AFTER seek for accurate timing
       ffmpegArgs.push(
+        '-readrate', '1',      // Read at real-time speed (prevents rushing!)
         '-i', this.tempFile,
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
         '-vn',
+        '-loglevel', 'error',  // Reduce noise
         'pipe:1'
       );
       
+      console.log(`🎬 [AUTO DJ] FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
       this.ffmpeg = spawn('ffmpeg', ffmpegArgs);
       this.startTime = Date.now() - (this.pausedAt * 1000);  // Adjust for resume position
 
       // Pipe audio to HLS server
       let chunkCount = 0;
       let lastLog = Date.now();
+      let bytesProcessed = 0;
       
       this.ffmpeg.stdout.on('data', (chunk) => {
         if (!this.playing) return;
         
         chunkCount++;
+        bytesProcessed += chunk.length;
         
-        // Log progress every 30 seconds
+        // Log progress every 30 seconds with data rate
         const now = Date.now();
         if (now - lastLog > 30000) {
-          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks)`);
+          const mbProcessed = (bytesProcessed / 1024 / 1024).toFixed(1);
+          const elapsed = ((now - this.startTime) / 1000).toFixed(0);
+          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks, ${mbProcessed}MB, ${elapsed}s elapsed)`);
           lastLog = now;
+          bytesProcessed = 0;
         }
         
+        // Convert Buffer to Float32Array properly
         const float32Data = new Float32Array(
           chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength)
         );
