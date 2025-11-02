@@ -105,11 +105,9 @@ export class AutoDJ {
           bytesProcessed = 0;
         }
         
-        // Convert Buffer to Float32Array properly
-        const float32Data = new Float32Array(
-          chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength)
-        );
-        this.hlsServer.processAudio(float32Data);
+        // FFmpeg outputs f32le (Float32 PCM) - pass buffer directly to HLS
+        // No conversion needed - HLS expects f32le input
+        this.hlsServer.processAudio(chunk);
       });
 
       this.ffmpeg.on('exit', async (code) => {

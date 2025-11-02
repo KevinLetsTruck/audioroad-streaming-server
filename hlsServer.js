@@ -25,8 +25,8 @@ export class HLSServer {
       await fs.mkdir(this.streamPath, { recursive: true });
       console.log('   ✓ Clean segment directory created');
 
-      // Create input stream
-      this.inputStream = new PassThrough();
+      // Create input stream with larger buffer to prevent audio dropouts
+      this.inputStream = new PassThrough({ highWaterMark: 1024 * 1024 }); // 1MB buffer
 
       // Start FFmpeg with RELIABLE settings for 24/7 streaming
       // Apps need time to fetch segments, so we keep more segments and delete less aggressively
@@ -35,8 +35,15 @@ export class HLSServer {
         '-ar', '48000',
         '-ac', '2',
         '-i', 'pipe:0',
+        
+        // Audio encoding with quality settings
         '-c:a', 'aac',
         '-b:a', '128k',
+        '-ar', '48000',              // Keep same sample rate
+        '-ac', '2',
+        '-af', 'aresample=async=1',  // Async resampling to prevent timing issues
+        
+        // HLS output settings
         '-f', 'hls',
         '-hls_time', '6',              // 6-second segments (good balance of latency vs reliability)
         '-hls_list_size', '10',        // Keep 10 segments (60 seconds of buffer)
@@ -86,10 +93,21 @@ export class HLSServer {
       return;
     }
     
-    // Convert Float32Array to Buffer properly
-    const buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
+    // audioData can be either Buffer (from Auto DJ) or Float32Array (from browser via Socket.IO)
+    let buffer;
     
-    // Write to FFmpeg stdin with proper backpressure handling
+    if (Buffer.isBuffer(audioData)) {
+      // Already a buffer from Auto DJ FFmpeg (f32le PCM data)
+      buffer = audioData;
+    } else if (audioData instanceof Float32Array || audioData.buffer) {
+      // Float32Array from browser - convert to Buffer
+      buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
+    } else {
+      console.error('❌ [HLS] Unknown audio data type:', typeof audioData);
+      return;
+    }
+    
+    // Write to FFmpeg stdin (expects f32le PCM)
     try {
       this.inputStream.write(buffer);
     } catch (error) {
