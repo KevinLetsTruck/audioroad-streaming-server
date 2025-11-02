@@ -28,7 +28,8 @@ export class HLSServer {
       // Create input stream
       this.inputStream = new PassThrough();
 
-      // Start FFmpeg
+      // Start FFmpeg with RELIABLE settings for 24/7 streaming
+      // Apps need time to fetch segments, so we keep more segments and delete less aggressively
       this.ffmpeg = spawn('ffmpeg', [
         '-f', 'f32le',
         '-ar', '48000',
@@ -37,10 +38,13 @@ export class HLSServer {
         '-c:a', 'aac',
         '-b:a', '128k',
         '-f', 'hls',
-        '-hls_time', '2',
-        '-hls_list_size', '6',
-        '-hls_flags', 'delete_segments+temp_file',
+        '-hls_time', '6',              // 6-second segments (good balance of latency vs reliability)
+        '-hls_list_size', '10',        // Keep 10 segments (60 seconds of buffer)
+        '-hls_flags', 'temp_file+omit_endlist',  // Use temp files but DON'T delete segments immediately
+        '-hls_delete_threshold', '3',  // Keep at least 3 extra segments beyond playlist
         '-hls_segment_filename', path.join(this.streamPath, 'segment-%05d.ts'),
+        '-start_number', '0',          // Start numbering from 0
+        '-hls_allow_cache', '1',       // Allow caching for better performance
         path.join(this.streamPath, 'playlist.m3u8')
       ]);
 
