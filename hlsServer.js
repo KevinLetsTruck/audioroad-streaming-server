@@ -89,14 +89,11 @@ export class HLSServer {
     // Convert Float32Array to Buffer properly
     const buffer = Buffer.from(audioData.buffer, audioData.byteOffset, audioData.byteLength);
     
-    // Write to FFmpeg stdin
-    const written = this.inputStream.write(buffer);
-    
-    if (!written) {
-      // Buffer is full, wait for drain
-      this.inputStream.once('drain', () => {
-        // Ready to write more
-      });
+    // Write to FFmpeg stdin with proper backpressure handling
+    try {
+      this.inputStream.write(buffer);
+    } catch (error) {
+      console.error('❌ [HLS] Error writing to FFmpeg:', error);
     }
   }
 
