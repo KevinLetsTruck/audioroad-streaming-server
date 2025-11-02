@@ -118,33 +118,42 @@ export class AutoDJ {
         this.hlsServer.processAudio(chunk);
       });
 
-      this.ffmpeg.on('exit', async (code) => {
-        console.log(`✅ [AUTO DJ] Track finished: ${track.title} (exit code: ${code}, chunks: ${chunkCount})`);
+      this.ffmpeg.on('exit', async (code, signal) => {
+        console.log(`📴 [AUTO DJ] FFmpeg exited (code: ${code}, signal: ${signal}, chunks: ${chunkCount})`);
         
-        // PREVENT MULTIPLE INSTANCES: Only restart if we're still marked as playing
-        // and not currently playing (this.ffmpeg should be null or this one)
-        if (code === 0 && this.playing && this.ffmpeg && this.ffmpeg.killed) {
+        // If killed by SIGKILL (stop() was called), don't restart
+        if (signal === 'SIGKILL' || code === null) {
+          console.log('   ⏸️ Paused/killed - not restarting');
+          this.ffmpeg = null;
+          return;
+        }
+        
+        // If track finished naturally AND we're still supposed to be playing
+        if (code === 0 && this.playing) {
           // Track played to the end naturally
+          console.log('   Track completed naturally - cleaning up...');
           await fs.unlink(this.tempFile).catch(() => {});
           this.tempFile = null;
           this.pausedAt = 0;
           this.startTime = null;
           this.ffmpeg = null;
           
-          // Wait 1 second before restarting to prevent rapid loops
-          console.log('🔄 [AUTO DJ] Track completed - will restart in 1 second...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait 2 seconds before restarting to prevent rapid loops
+          console.log('🔄 [AUTO DJ] Will restart from beginning in 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
           
-          // Double-check we're still supposed to be playing
-          if (this.playing) {
+          // Double-check we're STILL supposed to be playing (user might have started live show)
+          if (this.playing && !this.ffmpeg) {
+            console.log('🔄 [AUTO DJ] Restarting track from beginning...');
             await this.playTrack(track);
+          } else {
+            console.log('   Not restarting - live show may have started');
           }
-        } else if (code !== null && code !== 0) {
+        } else if (code !== 0) {
           // Error exit
           console.error(`❌ [AUTO DJ] FFmpeg exited abnormally with code ${code}`);
           this.ffmpeg = null;
         }
-        // If code is null, it was killed (paused) - keep temp file and position for resume
       });
 
       this.ffmpeg.on('error', (error) => {
@@ -167,6 +176,9 @@ export class AutoDJ {
   async stop() {
     console.log('⏸️ [AUTO DJ] Pausing (saving position for resume)...');
     
+    // Mark as not playing FIRST to prevent any new instances
+    this.playing = false;
+    
     // Calculate current position
     if (this.startTime) {
       const elapsed = (Date.now() - this.startTime) / 1000;  // Convert to seconds
@@ -174,11 +186,15 @@ export class AutoDJ {
       console.log(`   Paused at: ${Math.floor(elapsed / 60)}m ${Math.floor(elapsed % 60)}s`);
     }
     
-    this.playing = false;
-    
-    if (this.ffmpeg) {
+    // Kill FFmpeg forcefully
+    if (this.ffmpeg && !this.ffmpeg.killed) {
+      console.log('   Killing FFmpeg process...');
       this.ffmpeg.kill('SIGKILL');
+      
+      // Wait for it to actually die
+      await new Promise(resolve => setTimeout(resolve, 500));
       this.ffmpeg = null;
+      console.log('   ✓ FFmpeg killed');
     }
     
     // Keep temp file for resume! Don't delete it
