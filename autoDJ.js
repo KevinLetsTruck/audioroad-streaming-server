@@ -114,8 +114,8 @@ export class AutoDJ {
           lastLog = now;
         }
         
-        // Pass buffer directly to HLS server
-        this.hlsServer.processAudio(chunk);
+        // Pass buffer directly to HLS server (mark as Auto DJ source)
+        this.hlsServer.processAudio(chunk, 'auto');
       });
 
       this.ffmpeg.on('exit', async (code, signal) => {

@@ -102,7 +102,8 @@ io.on('connection', (socket) => {
         lastLiveLog = now;
       }
       
-      hlsServer.processAudio(audioData);
+      // Process as live audio (not Auto DJ)
+      hlsServer.processAudio(audioData, 'live');
     }
   });
 
@@ -110,6 +111,10 @@ io.on('connection', (socket) => {
   socket.on('live-start', async () => {
     console.log('📡 [LIVE] Live show starting - pausing Auto DJ...');
     try {
+      // Switch HLS to live mode (stop accepting Auto DJ audio)
+      hlsServer.setLiveMode(true);
+      
+      // Stop Auto DJ
       if (autoDJ && autoDJ.isPlaying()) {
         await autoDJ.stop();
         console.log('✅ [LIVE] Auto DJ stopped - ready for live audio');
@@ -123,6 +128,13 @@ io.on('connection', (socket) => {
   socket.on('live-stop', async () => {
     console.log('📴 [LIVE] Live show ended - resuming Auto DJ...');
     try {
+      // Switch HLS back to Auto DJ mode
+      hlsServer.setLiveMode(false);
+      
+      // Wait a moment for any buffered live audio to finish
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Resume Auto DJ
       if (autoDJ && !autoDJ.isPlaying()) {
         await autoDJ.start();
         console.log('✅ [LIVE] Auto DJ resumed');

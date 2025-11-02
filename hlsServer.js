@@ -14,6 +14,7 @@ export class HLSServer {
     this.inputStream = null;
     this.streaming = false;
     this.streamPath = '/tmp/hls-stream';
+    this.acceptAutoDJ = true;  // Control whether to accept Auto DJ audio
   }
 
   async start() {
@@ -90,10 +91,14 @@ export class HLSServer {
     }
   }
 
-  processAudio(audioData) {
+  processAudio(audioData, source = 'auto') {
     if (!this.inputStream || !this.streaming) {
-      console.error('❌ [HLS] Cannot process audio - stream not ready');
-      return;
+      return; // Silently ignore if not ready
+    }
+    
+    // When live audio is active, ignore Auto DJ audio
+    if (source === 'auto' && !this.acceptAutoDJ) {
+      return; // Silently ignore Auto DJ when live is active
     }
     
     // audioData can be either Buffer (from Auto DJ) or Float32Array (from browser via Socket.IO)
@@ -116,6 +121,11 @@ export class HLSServer {
     } catch (error) {
       console.error('❌ [HLS] Error writing to FFmpeg:', error);
     }
+  }
+  
+  setLiveMode(isLive) {
+    this.acceptAutoDJ = !isLive;
+    console.log(`🎚️ [HLS] Audio source: ${isLive ? 'LIVE SHOW' : 'AUTO DJ'}`);
   }
 
   async getPlaylist() {
