@@ -26,6 +26,11 @@ export class AutoDJ {
   }
 
   async start() {
+    if (this.playing) {
+      console.log('⚠️ [AUTO DJ] Already playing - ignoring start request');
+      return;
+    }
+    
     console.log('🎵 [AUTO DJ] Starting...');
     console.log(`   Loaded ${this.playlist.length} track(s)`);
     
@@ -34,7 +39,15 @@ export class AutoDJ {
   }
 
   async playTrack(track) {
-    if (!this.playing) return;
+    if (!this.playing) {
+      console.log('⚠️ [AUTO DJ] Not in playing state - skipping playTrack');
+      return;
+    }
+    
+    if (this.ffmpeg && !this.ffmpeg.killed) {
+      console.log('⚠️ [AUTO DJ] FFmpeg already running - skipping playTrack');
+      return;
+    }
 
     console.log(`🎵 [AUTO DJ] Playing: ${track.title}`);
     
@@ -83,81 +96,53 @@ export class AutoDJ {
       this.ffmpeg = spawn('ffmpeg', ffmpegArgs);
       this.startTime = Date.now() - (this.pausedAt * 1000);  // Adjust for resume position
 
-      // Pipe audio to HLS server with RATE LIMITING
+      // Pipe audio to HLS server - just pass through directly
+      // Let HLS FFmpeg handle buffering and timing
       let chunkCount = 0;
       let lastLog = Date.now();
-      let bytesProcessed = 0;
-      
-      // Buffer for rate-limited playback
-      const audioQueue = [];
-      let isProcessing = false;
-      
-      // Process queue at real-time rate
-      // Float32 PCM: 48000 Hz * 2 channels * 4 bytes = 384,000 bytes/sec
-      const BYTES_PER_SECOND = 384000;
-      
-      const processQueue = async () => {
-        if (isProcessing || audioQueue.length === 0 || !this.playing) {
-          return;
-        }
-        
-        isProcessing = true;
-        const chunk = audioQueue.shift();
-        
-        // Calculate how long this chunk should take to play
-        const chunkDurationMs = (chunk.length / BYTES_PER_SECOND) * 1000;
-        
-        // Send to HLS server
-        this.hlsServer.processAudio(chunk);
-        
-        // Wait for the chunk's natural duration before processing next
-        setTimeout(() => {
-          isProcessing = false;
-          processQueue(); // Process next chunk
-        }, chunkDurationMs);
-      };
       
       this.ffmpeg.stdout.on('data', (chunk) => {
         if (!this.playing) return;
         
         chunkCount++;
-        bytesProcessed += chunk.length;
         
         // Log progress every 30 seconds
         const now = Date.now();
         if (now - lastLog > 30000) {
-          const mbProcessed = (bytesProcessed / 1024 / 1024).toFixed(1);
           const elapsed = ((now - this.startTime) / 1000).toFixed(0);
-          const queueSize = audioQueue.length;
-          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks, ${mbProcessed}MB, ${elapsed}s elapsed, queue: ${queueSize})`);
+          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks, ${elapsed}s elapsed)`);
           lastLog = now;
-          bytesProcessed = 0;
         }
         
-        // Add to queue and start processing
-        audioQueue.push(chunk);
-        processQueue();
+        // Pass buffer directly to HLS server
+        this.hlsServer.processAudio(chunk);
       });
 
       this.ffmpeg.on('exit', async (code) => {
         console.log(`✅ [AUTO DJ] Track finished: ${track.title} (exit code: ${code}, chunks: ${chunkCount})`);
         
-        // If track finished naturally (not paused), clean up and restart
-        if (code === 0) {
-          // Track played to the end
+        // PREVENT MULTIPLE INSTANCES: Only restart if we're still marked as playing
+        // and not currently playing (this.ffmpeg should be null or this one)
+        if (code === 0 && this.playing && this.ffmpeg && this.ffmpeg.killed) {
+          // Track played to the end naturally
           await fs.unlink(this.tempFile).catch(() => {});
           this.tempFile = null;
           this.pausedAt = 0;
           this.startTime = null;
+          this.ffmpeg = null;
           
-          // Loop: play again from beginning
+          // Wait 1 second before restarting to prevent rapid loops
+          console.log('🔄 [AUTO DJ] Track completed - will restart in 1 second...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Double-check we're still supposed to be playing
           if (this.playing) {
-            console.log('🔄 [AUTO DJ] Track completed - restarting from beginning...');
             await this.playTrack(track);
           }
-        } else if (code !== null) {
+        } else if (code !== null && code !== 0) {
           // Error exit
           console.error(`❌ [AUTO DJ] FFmpeg exited abnormally with code ${code}`);
+          this.ffmpeg = null;
         }
         // If code is null, it was killed (paused) - keep temp file and position for resume
       });

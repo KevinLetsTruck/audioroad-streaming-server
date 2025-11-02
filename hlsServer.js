@@ -29,29 +29,32 @@ export class HLSServer {
       this.inputStream = new PassThrough({ highWaterMark: 1024 * 1024 }); // 1MB buffer
 
       // Start FFmpeg with RELIABLE settings for 24/7 streaming
-      // Apps need time to fetch segments, so we keep more segments and delete less aggressively
+      // CRITICAL: Use realtime filter to pace output at correct speed
       this.ffmpeg = spawn('ffmpeg', [
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
         '-i', 'pipe:0',
         
-        // Audio encoding with quality settings
+        // CRITICAL: Realtime filter paces audio at correct speed
+        // This prevents FFmpeg from processing faster than realtime
+        '-af', 'arealtime',
+        
+        // Audio encoding
         '-c:a', 'aac',
         '-b:a', '128k',
-        '-ar', '48000',              // Keep same sample rate
+        '-ar', '48000',
         '-ac', '2',
-        '-af', 'aresample=async=1',  // Async resampling to prevent timing issues
         
         // HLS output settings
         '-f', 'hls',
-        '-hls_time', '6',              // 6-second segments (good balance of latency vs reliability)
+        '-hls_time', '6',              // 6-second segments
         '-hls_list_size', '10',        // Keep 10 segments (60 seconds of buffer)
-        '-hls_flags', 'temp_file+omit_endlist',  // Use temp files but DON'T delete segments immediately
-        '-hls_delete_threshold', '3',  // Keep at least 3 extra segments beyond playlist
+        '-hls_flags', 'temp_file+omit_endlist',  // Don't delete immediately
+        '-hls_delete_threshold', '3',  // Keep 3 extra segments
         '-hls_segment_filename', path.join(this.streamPath, 'segment-%05d.ts'),
-        '-start_number', '0',          // Start numbering from 0
-        '-hls_allow_cache', '1',       // Allow caching for better performance
+        '-start_number', '0',
+        '-hls_allow_cache', '1',
         path.join(this.streamPath, 'playlist.m3u8')
       ]);
 
