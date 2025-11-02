@@ -87,9 +87,22 @@ io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
 
   // Receive live audio from main app
+  let liveAudioCount = 0;
+  let lastLiveLog = Date.now();
+  
   socket.on('live-audio', (audioData) => {
     if (hlsServer.isStreaming()) {
-      hlsServer.processAudio(audioData);  // Correct method name!
+      liveAudioCount++;
+      
+      // Log every 5 seconds to confirm live audio is flowing
+      const now = Date.now();
+      if (now - lastLiveLog > 5000) {
+        console.log(`📡 [LIVE AUDIO] Received ${liveAudioCount} chunks in last 5 seconds`);
+        liveAudioCount = 0;
+        lastLiveLog = now;
+      }
+      
+      hlsServer.processAudio(audioData);
     }
   });
 

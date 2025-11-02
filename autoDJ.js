@@ -68,9 +68,8 @@ export class AutoDJ {
         console.log(`   🎯 Seeking to ${this.pausedAt}s in file`);
       }
       
-      // CRITICAL: -re must come BEFORE -i for real-time playback
+      // Don't use -re flag - control timing at application level instead
       ffmpegArgs.push(
-        '-re',                 // Read input at native frame rate (MUST be before -i!)
         '-i', this.tempFile,
         '-f', 'f32le',
         '-ar', '48000',
@@ -84,10 +83,39 @@ export class AutoDJ {
       this.ffmpeg = spawn('ffmpeg', ffmpegArgs);
       this.startTime = Date.now() - (this.pausedAt * 1000);  // Adjust for resume position
 
-      // Pipe audio to HLS server
+      // Pipe audio to HLS server with RATE LIMITING
       let chunkCount = 0;
       let lastLog = Date.now();
       let bytesProcessed = 0;
+      
+      // Buffer for rate-limited playback
+      const audioQueue = [];
+      let isProcessing = false;
+      
+      // Process queue at real-time rate
+      // Float32 PCM: 48000 Hz * 2 channels * 4 bytes = 384,000 bytes/sec
+      const BYTES_PER_SECOND = 384000;
+      
+      const processQueue = async () => {
+        if (isProcessing || audioQueue.length === 0 || !this.playing) {
+          return;
+        }
+        
+        isProcessing = true;
+        const chunk = audioQueue.shift();
+        
+        // Calculate how long this chunk should take to play
+        const chunkDurationMs = (chunk.length / BYTES_PER_SECOND) * 1000;
+        
+        // Send to HLS server
+        this.hlsServer.processAudio(chunk);
+        
+        // Wait for the chunk's natural duration before processing next
+        setTimeout(() => {
+          isProcessing = false;
+          processQueue(); // Process next chunk
+        }, chunkDurationMs);
+      };
       
       this.ffmpeg.stdout.on('data', (chunk) => {
         if (!this.playing) return;
@@ -95,19 +123,20 @@ export class AutoDJ {
         chunkCount++;
         bytesProcessed += chunk.length;
         
-        // Log progress every 30 seconds with data rate
+        // Log progress every 30 seconds
         const now = Date.now();
         if (now - lastLog > 30000) {
           const mbProcessed = (bytesProcessed / 1024 / 1024).toFixed(1);
           const elapsed = ((now - this.startTime) / 1000).toFixed(0);
-          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks, ${mbProcessed}MB, ${elapsed}s elapsed)`);
+          const queueSize = audioQueue.length;
+          console.log(`  🎵 [AUTO DJ] Playing... (${chunkCount} chunks, ${mbProcessed}MB, ${elapsed}s elapsed, queue: ${queueSize})`);
           lastLog = now;
           bytesProcessed = 0;
         }
         
-        // FFmpeg outputs f32le (Float32 PCM) - pass buffer directly to HLS
-        // No conversion needed - HLS expects f32le input
-        this.hlsServer.processAudio(chunk);
+        // Add to queue and start processing
+        audioQueue.push(chunk);
+        processQueue();
       });
 
       this.ffmpeg.on('exit', async (code) => {
