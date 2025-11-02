@@ -31,6 +31,11 @@ export class AutoDJ {
       return;
     }
     
+    if (this.ffmpeg && !this.ffmpeg.killed) {
+      console.log('⚠️ [AUTO DJ] FFmpeg process still running - ignoring start request');
+      return;
+    }
+    
     console.log('🎵 [AUTO DJ] Starting...');
     console.log(`   Loaded ${this.playlist.length} track(s)`);
     
@@ -81,14 +86,15 @@ export class AutoDJ {
         console.log(`   🎯 Seeking to ${this.pausedAt}s in file`);
       }
       
-      // Don't use -re flag - control timing at application level instead
+      // CRITICAL: Use arealtime filter to pace output at real-time speed
       ffmpegArgs.push(
         '-i', this.tempFile,
+        '-af', 'arealtime',    // Pace audio at real-time (prevents 100x speed!)
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
         '-vn',
-        '-loglevel', 'error',  // Reduce noise
+        '-loglevel', 'error',
         'pipe:1'
       );
       

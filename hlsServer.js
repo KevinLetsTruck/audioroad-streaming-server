@@ -30,16 +30,12 @@ export class HLSServer {
       this.inputStream = new PassThrough({ highWaterMark: 1024 * 1024 }); // 1MB buffer
 
       // Start FFmpeg with RELIABLE settings for 24/7 streaming
-      // CRITICAL: Use realtime filter to pace output at correct speed
+      // Auto DJ already paces audio with arealtime, so HLS just encodes
       this.ffmpeg = spawn('ffmpeg', [
         '-f', 'f32le',
         '-ar', '48000',
         '-ac', '2',
         '-i', 'pipe:0',
-        
-        // CRITICAL: Realtime filter paces audio at correct speed
-        // This prevents FFmpeg from processing faster than realtime
-        '-af', 'arealtime',
         
         // Audio encoding
         '-c:a', 'aac',

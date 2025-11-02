@@ -134,10 +134,12 @@ io.on('connection', (socket) => {
       // Wait a moment for any buffered live audio to finish
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Resume Auto DJ
+      // Resume Auto DJ ONLY if it's not already playing
       if (autoDJ && !autoDJ.isPlaying()) {
         await autoDJ.start();
         console.log('✅ [LIVE] Auto DJ resumed');
+      } else if (autoDJ && autoDJ.isPlaying()) {
+        console.log('⚠️ [LIVE] Auto DJ already playing - not restarting');
       }
     } catch (error) {
       console.error('❌ [LIVE] Error resuming Auto DJ:', error);
