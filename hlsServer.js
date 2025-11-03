@@ -29,8 +29,8 @@ export class HLSServer {
       // Create input stream with larger buffer to prevent audio dropouts
       this.inputStream = new PassThrough({ highWaterMark: 1024 * 1024 }); // 1MB buffer
 
-      // Start FFmpeg with RELIABLE settings for 24/7 streaming
-      // Auto DJ already paces audio with arealtime, so HLS just encodes
+      // Start FFmpeg with MINIMAL buffer for fast live transitions
+      // Smaller buffer = faster switch from Auto DJ to live (less overlap)
       this.ffmpeg = spawn('ffmpeg', [
         '-f', 'f32le',
         '-ar', '48000',
@@ -43,15 +43,14 @@ export class HLSServer {
         '-ar', '48000',
         '-ac', '2',
         
-        // HLS output settings
+        // HLS output settings - MINIMAL BUFFER for fast live switching
         '-f', 'hls',
-        '-hls_time', '6',              // 6-second segments
-        '-hls_list_size', '10',        // Keep 10 segments (60 seconds of buffer)
-        '-hls_flags', 'temp_file+omit_endlist',  // Don't delete immediately
-        '-hls_delete_threshold', '3',  // Keep 3 extra segments
+        '-hls_time', '4',              // 4-second segments (was 6)
+        '-hls_list_size', '3',         // Keep only 3 segments (12 seconds total - was 60!)
+        '-hls_flags', 'delete_segments+omit_endlist',  // Delete old segments immediately
         '-hls_segment_filename', path.join(this.streamPath, 'segment-%05d.ts'),
         '-start_number', '0',
-        '-hls_allow_cache', '1',
+        '-hls_allow_cache', '0',       // No caching for instant updates
         path.join(this.streamPath, 'playlist.m3u8')
       ]);
 
