@@ -46,6 +46,12 @@ export class AutoDJ {
     console.log('🎵 [AUTO DJ] Starting...');
     console.log(`   Loaded ${this.playlist.length} track(s)`);
     
+    // Final check before marking as playing
+    if (this.liveModeActive) {
+      console.log('🚫 [AUTO DJ] Live mode activated during start - ABORTING');
+      return;
+    }
+    
     this.playing = true;
     await this.playTrack(this.playlist[0]);
   }
@@ -135,7 +141,10 @@ export class AutoDJ {
       let lastLog = Date.now();
       
       this.ffmpeg.stdout.on('data', (chunk) => {
-        if (!this.playing) return;
+        // CRITICAL: Stop sending audio if live mode became active
+        if (!this.playing || this.liveModeActive) {
+          return;
+        }
         
         chunkCount++;
         
