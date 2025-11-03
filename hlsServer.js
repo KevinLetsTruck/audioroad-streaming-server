@@ -119,25 +119,34 @@ export class HLSServer {
     }
   }
   
-  setLiveMode(isLive) {
+  async setLiveMode(isLive) {
     this.acceptAutoDJ = !isLive;
     console.log(`🎚️ [HLS] Audio source: ${isLive ? 'LIVE SHOW' : 'AUTO DJ'}`);
     
-    if (isLive && this.inputStream) {
-      // Flush any buffered Auto DJ audio when switching to live
-      console.log('🚿 [HLS] Flushing buffered Auto DJ audio from input stream...');
+    if (isLive) {
+      // Restart HLS FFmpeg to clear ALL buffers when switching to live
+      console.log('🔄 [HLS] Restarting HLS FFmpeg to clear Auto DJ buffers...');
       
-      // Unpipe and recreate the stream to clear buffer
-      if (this.ffmpeg && this.ffmpeg.stdin) {
-        this.inputStream.unpipe(this.ffmpeg.stdin);
-        
-        // Create new PassThrough stream
-        const newStream = new PassThrough({ highWaterMark: 1024 * 1024 });
-        newStream.pipe(this.ffmpeg.stdin);
-        this.inputStream = newStream;
-        
-        console.log('✅ [HLS] Input stream flushed - live audio will start immediately');
+      // Stop current FFmpeg
+      if (this.ffmpeg) {
+        this.ffmpeg.kill('SIGTERM');
+        this.ffmpeg = null;
       }
+      
+      if (this.inputStream) {
+        this.inputStream.end();
+        this.inputStream = null;
+      }
+      
+      this.streaming = false;
+      
+      // Wait for cleanup
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Restart HLS (creates fresh FFmpeg with empty buffers)
+      await this.start();
+      
+      console.log('✅ [HLS] HLS restarted - ready for live audio only');
     }
   }
 
