@@ -122,8 +122,23 @@ export class HLSServer {
   setLiveMode(isLive) {
     this.acceptAutoDJ = !isLive;
     console.log(`🎚️ [HLS] Audio source: ${isLive ? 'LIVE SHOW' : 'AUTO DJ'}`);
-    // Don't delete segments - just block the audio source
-    // HLS will naturally create new segments with live audio
+    
+    if (isLive && this.inputStream) {
+      // Flush any buffered Auto DJ audio when switching to live
+      console.log('🚿 [HLS] Flushing buffered Auto DJ audio from input stream...');
+      
+      // Unpipe and recreate the stream to clear buffer
+      if (this.ffmpeg && this.ffmpeg.stdin) {
+        this.inputStream.unpipe(this.ffmpeg.stdin);
+        
+        // Create new PassThrough stream
+        const newStream = new PassThrough({ highWaterMark: 1024 * 1024 });
+        newStream.pipe(this.ffmpeg.stdin);
+        this.inputStream = newStream;
+        
+        console.log('✅ [HLS] Input stream flushed - live audio will start immediately');
+      }
+    }
   }
 
   async getPlaylist() {
