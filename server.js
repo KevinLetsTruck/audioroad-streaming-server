@@ -111,14 +111,22 @@ io.on('connection', (socket) => {
   socket.on('live-start', async () => {
     console.log('📡 [LIVE] Live show starting - pausing Auto DJ...');
     try {
-      // Switch HLS to live mode (stop accepting Auto DJ audio)
-      hlsServer.setLiveMode(true);
+      // CRITICAL ORDER: Stop Auto DJ FIRST, then switch HLS mode
+      // This prevents buffered Auto DJ audio from delaying live audio
       
-      // Stop Auto DJ
+      // 1. Stop Auto DJ immediately
       if (autoDJ && autoDJ.isPlaying()) {
         await autoDJ.stop();
-        console.log('✅ [LIVE] Auto DJ stopped - ready for live audio');
+        console.log('✅ [LIVE] Auto DJ stopped');
       }
+      
+      // 2. Wait for Auto DJ audio to finish draining (500ms)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 3. Switch HLS to live mode (now blocks any straggler Auto DJ chunks)
+      hlsServer.setLiveMode(true);
+      console.log('✅ [LIVE] HLS switched to LIVE mode - ready for live audio');
+      
     } catch (error) {
       console.error('❌ [LIVE] Error stopping Auto DJ:', error);
     }
