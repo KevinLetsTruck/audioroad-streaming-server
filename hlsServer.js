@@ -119,34 +119,17 @@ export class HLSServer {
     }
   }
   
-  async setLiveMode(isLive) {
+  setLiveMode(isLive) {
     this.acceptAutoDJ = !isLive;
     console.log(`🎚️ [HLS] Audio source: ${isLive ? 'LIVE SHOW' : 'AUTO DJ'}`);
     
+    // Don't restart FFmpeg - it breaks browser connections
+    // Just block the audio source and let buffered audio play out
+    // Within 10-20 seconds, only live audio will be flowing
+    
     if (isLive) {
-      // Restart HLS FFmpeg to clear ALL buffers when switching to live
-      console.log('🔄 [HLS] Restarting HLS FFmpeg to clear Auto DJ buffers...');
-      
-      // Stop current FFmpeg
-      if (this.ffmpeg) {
-        this.ffmpeg.kill('SIGTERM');
-        this.ffmpeg = null;
-      }
-      
-      if (this.inputStream) {
-        this.inputStream.end();
-        this.inputStream = null;
-      }
-      
-      this.streaming = false;
-      
-      // Wait for cleanup
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Restart HLS (creates fresh FFmpeg with empty buffers)
-      await this.start();
-      
-      console.log('✅ [HLS] HLS restarted - ready for live audio only');
+      console.log('ℹ️ [HLS] Buffered Auto DJ audio will play out over ~10-20 seconds');
+      console.log('ℹ️ [HLS] Then stream will contain ONLY live audio');
     }
   }
 
