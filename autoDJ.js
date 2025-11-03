@@ -49,9 +49,12 @@ export class AutoDJ {
       return;
     }
     
-    if (this.ffmpeg && !this.ffmpeg.killed) {
-      console.log('⚠️ [AUTO DJ] FFmpeg already running - skipping playTrack');
-      return;
+    // CRITICAL: Check if FFmpeg is REALLY dead
+    if (this.ffmpeg) {
+      if (!this.ffmpeg.killed && this.ffmpeg.exitCode === null) {
+        console.log('⚠️ [AUTO DJ] FFmpeg process still running - ABORTING playTrack');
+        return;
+      }
     }
 
     console.log(`🎵 [AUTO DJ] Playing: ${track.title}`);
@@ -99,6 +102,17 @@ export class AutoDJ {
       );
       
       console.log(`🎬 [AUTO DJ] FFmpeg command: ffmpeg ${ffmpegArgs.join(' ')}`);
+      
+      // Make ABSOLUTELY sure old FFmpeg is dead before starting new one
+      if (this.ffmpeg) {
+        console.log('⚠️ [AUTO DJ] Cleaning up old FFmpeg before starting new one...');
+        try {
+          this.ffmpeg.kill('SIGKILL');
+        } catch(e) {}
+        this.ffmpeg = null;
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
       this.ffmpeg = spawn('ffmpeg', ffmpegArgs);
       this.startTime = Date.now() - (this.pausedAt * 1000);  // Adjust for resume position
 

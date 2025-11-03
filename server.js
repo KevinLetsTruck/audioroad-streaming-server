@@ -132,8 +132,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Track last live-stop to prevent duplicates
+  let lastLiveStop = 0;
+  
   // Live show ended - resume Auto DJ
   socket.on('live-stop', async () => {
+    // Debounce: Ignore if we just processed a live-stop within 2 seconds
+    const now = Date.now();
+    if (now - lastLiveStop < 2000) {
+      console.log('⚠️ [LIVE] Ignoring duplicate live-stop signal');
+      return;
+    }
+    lastLiveStop = now;
+    
     console.log('📴 [LIVE] Live show ended - resuming Auto DJ...');
     try {
       // Switch HLS back to Auto DJ mode
