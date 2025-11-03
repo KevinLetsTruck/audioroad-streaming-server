@@ -119,9 +119,23 @@ export class HLSServer {
     }
   }
   
-  setLiveMode(isLive) {
+  async setLiveMode(isLive) {
     this.acceptAutoDJ = !isLive;
     console.log(`🎚️ [HLS] Audio source: ${isLive ? 'LIVE SHOW' : 'AUTO DJ'}`);
+    
+    if (isLive) {
+      // When switching to live, delete old Auto DJ segments to speed up transition
+      console.log('🧹 [HLS] Clearing old Auto DJ segments for fast live transition...');
+      
+      try {
+        // Delete all existing segments (FFmpeg will recreate with live audio)
+        await fs.rm(this.streamPath, { recursive: true, force: true });
+        await fs.mkdir(this.streamPath, { recursive: true });
+        console.log('✅ [HLS] Old segments cleared - live audio will appear immediately');
+      } catch (error) {
+        console.error('⚠️ [HLS] Error clearing segments:', error);
+      }
+    }
   }
 
   async getPlaylist() {
