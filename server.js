@@ -153,6 +153,11 @@ io.on('connection', (socket) => {
       // Wait a moment for any buffered live audio to finish
       await new Promise(resolve => setTimeout(resolve, 1000));
       
+      // Clear live mode lock BEFORE resuming Auto DJ
+      if (autoDJ) {
+        autoDJ.liveModeActive = false;  // Allow Auto DJ to start again
+      }
+      
       // Resume Auto DJ ONLY if it's not already playing
       if (autoDJ && !autoDJ.isPlaying()) {
         await autoDJ.start();

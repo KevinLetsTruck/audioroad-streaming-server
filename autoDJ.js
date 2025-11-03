@@ -16,6 +16,7 @@ export class AutoDJ {
     this.tempFile = null;          // Keep temp file for resume
     this.pausedAt = 0;             // Track pause position in seconds
     this.startTime = null;         // Track when playback started
+    this.liveModeActive = false;   // CRITICAL: Block Auto DJ when live show is active
     this.playlist = [
       {
         title: 'ROTC 9-23-25',
@@ -26,6 +27,12 @@ export class AutoDJ {
   }
 
   async start() {
+    // CRITICAL: Never start if live mode is active
+    if (this.liveModeActive) {
+      console.log('🚫 [AUTO DJ] BLOCKED - Live show is active, cannot start Auto DJ');
+      return;
+    }
+    
     if (this.playing) {
       console.log('⚠️ [AUTO DJ] Already playing - ignoring start request');
       return;
@@ -44,6 +51,12 @@ export class AutoDJ {
   }
 
   async playTrack(track) {
+    // CRITICAL: Never play if live mode is active
+    if (this.liveModeActive) {
+      console.log('🚫 [AUTO DJ] BLOCKED - Live mode active, cannot play track');
+      return;
+    }
+    
     if (!this.playing) {
       console.log('⚠️ [AUTO DJ] Not in playing state - skipping playTrack');
       return;
@@ -149,7 +162,7 @@ export class AutoDJ {
         }
         
         // If track finished naturally AND we're still supposed to be playing
-        if (code === 0 && this.playing) {
+        if (code === 0 && this.playing && !this.liveModeActive) {
           // Track played to the end naturally
           console.log('   Track completed naturally - cleaning up...');
           await fs.unlink(this.tempFile).catch(() => {});
@@ -162,17 +175,19 @@ export class AutoDJ {
           console.log('🔄 [AUTO DJ] Will restart from beginning in 2 seconds...');
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          // Double-check we're STILL supposed to be playing (user might have started live show)
-          if (this.playing && !this.ffmpeg) {
+          // TRIPLE CHECK: playing + no ffmpeg + NOT in live mode
+          if (this.playing && !this.ffmpeg && !this.liveModeActive) {
             console.log('🔄 [AUTO DJ] Restarting track from beginning...');
             await this.playTrack(track);
           } else {
-            console.log('   Not restarting - live show may have started');
+            console.log('   Not restarting - live show active or other instance running');
           }
         } else if (code !== 0) {
           // Error exit
           console.error(`❌ [AUTO DJ] FFmpeg exited abnormally with code ${code}`);
           this.ffmpeg = null;
+        } else if (this.liveModeActive) {
+          console.log('   Not restarting - live mode is active');
         }
       });
 
@@ -198,6 +213,7 @@ export class AutoDJ {
     
     // Mark as not playing FIRST to prevent any new instances
     this.playing = false;
+    this.liveModeActive = true;  // CRITICAL: Block Auto DJ restarts during live show
     
     // Calculate current position
     if (this.startTime) {
